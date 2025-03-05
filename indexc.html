@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vortex Key</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+        }
+        video {
+            width: 300px;
+            height: 300px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        #result {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        img {
+            width: 50px;
+            height: 50px;
+            margin-top: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="title">Vortex Key - Login</h1>
+        <video id="preview"></video>
+        <div id="result">Scan a QR code to login</div>
+        <img id="statusImage" src="" alt="Status">
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.3.1/dist/jsQR.js"></script>
+    <script>
+        const video = document.createElement('video');
+        const canvasElement = document.createElement('canvas');
+        const canvas = canvasElement.getContext('2d');
+        const resultElement = document.getElementById('result');
+        const statusImage = document.getElementById('statusImage');
+        const titleElement = document.getElementById('title');
+        let currentUser = '';
+        let isLoggedIn = false;
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+            video.srcObject = stream;
+            video.setAttribute('playsinline', true);
+            video.play();
+            requestAnimationFrame(tick);
+        });
+
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvasElement.height = video.videoHeight;
+                canvasElement.width = video.videoWidth;
+                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: 'dontInvert',
+                });
+                if (code) {
+                    handleQRCode(code.data);
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        function handleQRCode(data) {
+            try {
+                const decryptedData = decryptData(data, 'ak45545514054505450450545054'); // Use the same key as in your crypto app
+                if (!isLoggedIn) {
+                    currentUser = decryptedData;
+                    isLoggedIn = true;
+                    resultElement.textContent = `Logged in as ${currentUser}`;
+                    statusImage.src = '';
+                    document.cookie = `currentUser=${currentUser}; max-age=${365*24*60*60}; path=/`;
+                    setTimeout(() => {
+                        titleElement.textContent = 'Vortex Key - Authorize Transaction';
+                        resultElement.textContent = 'Scan a QR code to authorize transaction';
+                        statusImage.src = '';
+                    }, 2000);
+                } else {
+                    if (decryptedData === currentUser) {
+                        resultElement.textContent = 'Transaction Authorized';
+                        statusImage.src = 'ok.png';
+                    } else {
+                        resultElement.textContent = 'Transaction Declined';
+                        statusImage.src = 'x.png';
+                    }
+                }
+            } catch (e) {
+                resultElement.textContent = 'Invalid QR Code';
+                statusImage.src = 'x.png';
+            }
+        }
+
+        function decryptData(encryptedData, key) {
+            const data = atob(encryptedData);
+            const nonce = data.slice(0, 16);
+            const tag = data.slice(16, 32);
+            const ciphertext = data.slice(32);
+            const cipher = new AES.ModeOfOperation.ocb(key, nonce, 16);
+            const plaintext = cipher.decrypt(ciphertext, tag);
+            return new TextDecoder().decode(plaintext);
+        }
+    </script>
+</body>
+</html>
