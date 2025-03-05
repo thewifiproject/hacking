@@ -2,131 +2,91 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vortex Key</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f0f0f0;
         }
-        #qr-video {
-            display: none;
-        }
-        #qr-canvas {
-            display: none;
+        #camera {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
         }
         #status {
-            margin-top: 20px;
+            margin: 20px;
+            font-size: 1.2em;
         }
-        #login-barcode {
-            margin-top: 20px;
+        #result {
+            margin: 20px;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.3.1/dist/jsQR.js"></script>
 </head>
 <body>
-    <div>
-        <h1>Vortex Key</h1>
-        <video id="qr-video" width="300" height="300"></video>
-        <canvas id="qr-canvas" width="300" height="300"></canvas>
-        <div id="status">Waiting for QR code...</div>
-        <div id="login-barcode"></div>
-    </div>
-
+    <h1>Vortex Key</h1>
+    <video id="camera"></video>
+    <div id="status">Waiting for barcode scan...</div>
+    <div id="result"></div>
     <script>
-        const video = document.getElementById('qr-video');
-        const canvas = document.getElementById('qr-canvas');
-        const context = canvas.getContext('2d');
-        const status = document.getElementById('status');
-        const loginBarcode = document.getElementById('login-barcode');
-
+        const video = document.getElementById('camera');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
         let loggedInUser = null;
 
-        function startQRScanner() {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
-                video.srcObject = stream;
-                video.setAttribute('playsinline', true);
-                video.play();
-                requestAnimationFrame(tick);
-            });
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.setAttribute('playsinline', true);
+                    video.play();
+                    requestAnimationFrame(scanCode);
+                });
         }
 
-        function tick() {
+        function scanCode() {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                canvas.height = video.videoHeight;
+                const canvas = document.createElement('canvas');
                 canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
                 const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: "dontInvert",
+                    inversionAttempts: 'dontInvert',
                 });
+
                 if (code) {
-                    handleQRCode(code.data);
+                    if (!loggedInUser) {
+                        loggedInUser = code.data;
+                        statusDiv.textContent = `Logged in as ${loggedInUser}`;
+                        resultDiv.innerHTML = '';
+                        // Save user in cookies for 365 days
+                        document.cookie = `user=${loggedInUser}; max-age=${365 * 24 * 60 * 60}; path=/`;
+                    } else {
+                        // Process transaction QR code
+                        const qrData = JSON.parse(code.data);
+                        const decryptedName = decryptData(qrData.encrypted_name, 'your_32_byte_key_here');
+                        if (decryptedName === loggedInUser) {
+                            resultDiv.innerHTML = '<img src="static/ok.png" alt="OK">';
+                        } else {
+                            resultDiv.innerHTML = '<img src="static/x.png" alt="Error">';
+                        }
+                    }
                 }
             }
-            requestAnimationFrame(tick);
+            requestAnimationFrame(scanCode);
         }
 
-        function handleQRCode(data) {
-            try {
-                const decryptedData = decryptData(data, 'your_secret_key');
-                const qrData = JSON.parse(decryptedData);
-
-                if (!loggedInUser) {
-                    loginUser(qrData.user);
-                } else {
-                    processTransaction(qrData.user);
-                }
-            } catch (error) {
-                console.error('Error processing QR code:', error);
-                status.innerText = 'Invalid QR code';
-            }
+        function decryptData(data, key) {
+            const decodedData = atob(data);
+            const iv = decodedData.slice(0, 16);
+            const encryptedText = decodedData.slice(16);
+            const decipher = new TextDecoder();
+            const decrypted = decipher.decode(encryptedText);
+            return decrypted;
         }
 
-        function decryptData(encryptedData, key) {
-            const data = atob(encryptedData);
-            const iv = data.slice(0, 16);
-            const encrypted = data.slice(16);
-            const decipher = CryptoJS.AES.decrypt({ ciphertext: CryptoJS.enc.Base64.parse(encrypted) }, CryptoJS.enc.Hex.parse(key), {
-                iv: CryptoJS.enc.Hex.parse(iv),
-                mode: CryptoJS.mode.CBC,
-                padding: CryptoJS.pad.Pkcs7
-            });
-            return decipher.toString(CryptoJS.enc.Utf8);
-        }
-
-        function loginUser(user) {
-            loggedInUser = user;
-            status.innerText = `Logged in as ${user}`;
-            clearLoginBarcode();
-        }
-
-        function processTransaction(user) {
-            if (user === loggedInUser) {
-                status.innerText = 'Transaction accepted';
-                showResult('static/ok.png');
-            } else {
-                status.innerText = 'Transaction denied';
-                showResult('static/x.png');
-            }
-        }
-
-        function clearLoginBarcode() {
-            loginBarcode.innerHTML = '';
-        }
-
-        function showResult(imageSrc) {
-            const img = document.createElement('img');
-            img.src = imageSrc;
-            loginBarcode.appendChild(img);
-        }
-
-        startQRScanner();
+        startCamera();
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </body>
 </html>
